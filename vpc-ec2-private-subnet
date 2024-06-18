@@ -1,0 +1,135 @@
+# Define provider
+provider "aws" {
+  region = "eu-west-2" # Change the region as per your requirement
+  profile = "terraform-user"
+}
+
+# Create VPC
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+
+  tags = {
+    Name = "main-vpc"
+  }
+}
+
+# Create Internet Gateway
+resource "aws_internet_gateway" "gw" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "main-igw"
+  }
+}
+
+# Create Public Subnet
+resource "aws_subnet" "public" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.1.0/24"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "main-public-subnet"
+  }
+}
+
+# Create Private Subnet
+resource "aws_subnet" "private" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.2.0/24"
+
+  tags = {
+    Name = "main-private-subnet"
+  }
+}
+
+# Create Route Table for Public Subnet
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.gw.id
+  }
+
+  tags = {
+    Name = "main-public-rt"
+  }
+}
+
+# Associate Route Table with Public Subnet
+resource "aws_route_table_association" "a" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
+
+# Create Security Group for Private Subnet
+resource "aws_security_group" "private_sg" {
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Egress rules
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "main-private-sg"
+  }
+}
+
+# Create 3 EC2 Instances in Private Subnet
+resource "aws_instance" "private" {
+  count         = 3
+  ami           = "ami-0c55b159cbfafe1f0" # Update this with the AMI ID you want to use
+  instance_type = "t2.micro"
+  subnet_id     = aws_subnet.private.id
+  security_groups = [aws_security_group.private_sg.name]
+
+  tags = {
+    Name = "private-instance-${count.index + 1}"
+  }
+}
+
+# Output the VPC ID
+output "vpc_id" {
+  value = aws_vpc.main.id
+}
+
+# Output the Public Subnet ID
+output "public_subnet_id" {
+  value = aws_subnet.public.id
+}
+
+# Output the Private Subnet ID
+output "private_subnet_id" {
+  value = aws_subnet.private.id
+}
+
+# Output the Instance IDs
+output "instance_ids" {
+  value = [for instance in aws_instance.private : instance.id]
+}
